@@ -13,7 +13,7 @@ stages {
 
     stage('Run Automation from Automation Repo') {
         steps {
-            echo "Cloning Automation Repo..."
+            echo "Cloning Automation Repo...."
 
             git branch: 'main',
                 url: 'https://github.com/amazon-ui-automation-org/amazon-ui-automation.git'
