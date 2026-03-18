@@ -1,13 +1,7 @@
 pipeline {
     agent any
 
-    environment {
-        ENV = ''
-        SUITE = ''
-    }
-
     triggers {
-        // Nightly regression (runs at 2 AM)
         cron('H 2 * * *')
     }
 
@@ -19,27 +13,27 @@ pipeline {
                     echo "Branch: ${env.BRANCH_NAME}"
 
                     if (env.BRANCH_NAME == 'alpha') {
-                        ENV = 'qa'
-                        SUITE = 'testng-smoke.xml'
+                        env.ENV = 'qa'
+                        env.SUITE = 'testng-smoke.xml'
 
-                        // If triggered by cron → run regression instead
-                        if (currentBuild.rawBuild.getCause(hudson.triggers.TimerTrigger$TimerTriggerCause)) {
+                        def isTimer = currentBuild.getBuildCauses('hudson.triggers.TimerTrigger$TimerTriggerCause')
+
+                        if (isTimer) {
                             echo "Nightly build detected"
-                            SUITE = 'testng-regression.xml'
+                            env.SUITE = 'testng-regression.xml'
                         }
 
                     } else if (env.BRANCH_NAME == 'main') {
-                        ENV = 'prod'
-                        SUITE = 'testng-regression.xml'
+                        env.ENV = 'prod'
+                        env.SUITE = 'testng-regression.xml'
 
                     } else {
-                        // feature branches
-                        ENV = 'qa'
-                        SUITE = 'testng-smoke.xml'
+                        env.ENV = 'qa'
+                        env.SUITE = 'testng-smoke.xml'
                     }
 
-                    echo "Environment: ${ENV}"
-                    echo "Suite: ${SUITE}"
+                    echo "Environment: ${env.ENV}"
+                    echo "Suite: ${env.SUITE}"
                 }
             }
         }
@@ -53,16 +47,14 @@ pipeline {
 
         stage('Run Tests') {
             steps {
-                echo "Running ${SUITE} on ${ENV}"
-
-                bat "mvn clean test -DsuiteXmlFile=suites/${SUITE} -Denv=${ENV}"
+                bat "mvn clean test -DsuiteXmlFile=suites/${env.SUITE} -Denv=${env.ENV}"
             }
         }
     }
 
     post {
         success {
-            echo "✅ Tests Passed.."
+            echo "✅ Tests Passed"
         }
         failure {
             echo "❌ Tests Failed"
