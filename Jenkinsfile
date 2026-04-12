@@ -3,11 +3,10 @@ pipeline {
     agent any
 
     triggers {
-        // Nightly regression (QA - alpha)
-        cron('H 2 * * *')
-
-        // Alternate day smoke (PROD)
-        cron('H 3 */2 * *')
+        cron('''
+        H 2 * * *
+        H 3 */2 * *
+    ''')
     }
 
     environment {
