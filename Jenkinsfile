@@ -1,8 +1,18 @@
+// new pipeline code
 pipeline {
     agent any
 
     triggers {
-        cron('H 2 * * *')
+        cron('''
+        H 2 * * *
+        H 3 */2 * *
+    ''')
+    }
+
+    environment {
+        ENV = 'qa'
+        SUITE = 'testng-smoke.xml'
+        IS_PR = 'false'
     }
 
     stages {
@@ -10,30 +20,85 @@ pipeline {
         stage('Detect Branch & Configure') {
             steps {
                 script {
+
                     echo "Branch: ${env.BRANCH_NAME}"
 
-                    if (env.BRANCH_NAME == 'alpha') {
-                        env.ENV = 'qa'
-                        env.SUITE = 'testng-smoke.xml'
+                    def isTimer = currentBuild.getBuildCauses('hudson.triggers.TimerTrigger$TimerTriggerCause')
+                    def isPR = env.CHANGE_ID != null
 
-                        def isTimer = currentBuild.getBuildCauses('hudson.triggers.TimerTrigger$TimerTriggerCause')
+                    env.IS_PR = isPR.toString()
 
-                        if (isTimer) {
-                            echo "Nightly build detected"
-                            env.SUITE = 'testng-regression.xml'
+                    // 🔥 PR BUILDS (feature→alpha OR alpha→main)
+                    if (isPR) {
+
+                        // Jenkins sets CHANGE_TARGET for PRs
+                        def target = env.CHANGE_TARGET
+
+                        if (target == 'alpha') {
+                            env.ENV = 'qa'
+                            env.SUITE = 'testng-smoke.xml'
+                            echo "PR → feature to alpha → Smoke on QA (no deploy)"
                         }
-
-                    } else if (env.BRANCH_NAME == 'main') {
-                        env.ENV = 'prod'
-                        env.SUITE = 'testng-regression.xml'
-
-                    } else {
-                        env.ENV = 'qa'
-                        env.SUITE = 'testng-smoke.xml'
+                        else if (target == 'main') {
+                            env.ENV = 'prod'
+                            env.SUITE = 'testng-smoke.xml'
+                            echo "PR → alpha to main → Smoke on PROD (no deploy)"
+                        }
                     }
 
-                    echo "Environment: ${env.ENV}"
-                    echo "Suite: ${env.SUITE}"
+                    // 🔵 ALPHA BRANCH
+                    else if (env.BRANCH_NAME == 'alpha') {
+
+                        env.ENV = 'qa'
+                        env.SUITE = isTimer ? 'testng-regression.xml' : 'testng-smoke.xml'
+
+                        echo "Alpha Build → ${env.SUITE}"
+                    }
+
+                    // 🔴 MAIN BRANCH
+                    else if (env.BRANCH_NAME == 'main') {
+
+                        // Cron → prod smoke
+                        if (isTimer) {
+                            env.ENV = 'prod'
+                            env.SUITE = 'testng-smoke.xml'
+                            echo "Scheduled PROD smoke run"
+                        } else {
+                            env.ENV = 'prod'
+                            env.SUITE = 'testng-regression.xml'
+                            echo "Main Build → Regression on PROD"
+                        }
+                    }
+
+                    // 🟢 FEATURE BRANCH
+                    //else if (env.BRANCH_NAME.startsWith('feature/')) {
+                      //  env.ENV = 'qa'
+                        //env.SUITE = 'testng-smoke.xml'
+                        //echo "Feature branch → optional smoke"
+                   // }
+
+                    // Skip cron for wrong branches
+                    if (isTimer && !(env.BRANCH_NAME in ['alpha', 'main'])) {
+                        echo "Skipping scheduled run for branch: ${env.BRANCH_NAME}"
+                        currentBuild.result = 'NOT_BUILT'
+                        error("Stopping pipeline for invalid cron trigger")
+                    }
+
+                    echo "Final → ENV: ${env.ENV}, SUITE: ${env.SUITE}, IS_PR: ${env.IS_PR}"
+                }
+            }
+        }
+
+        // ✅ Deploy only for non-PR builds
+        stage('Deploy Application (Simulated)') {
+            when {
+                expression { env.IS_PR != 'true' }
+            }
+            steps {
+                script {
+                    echo "Deploying application to ${env.ENV}..."
+                    sleep(time: 5, unit: 'SECONDS')
+                    echo "Deployment completed for ${env.ENV}"
                 }
             }
         }
@@ -47,7 +112,19 @@ pipeline {
 
         stage('Run Tests') {
             steps {
-                bat "mvn clean test -DsuiteXmlFile=suites/${env.SUITE} -Denv=${env.ENV}"
+                echo "Running ${env.SUITE} on ${env.ENV}"
+
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    bat "mvn clean test -DsuiteXmlFile=suites/${env.SUITE} -Denv=${env.ENV}"
+                }
+            }
+        }
+
+        stage('Generate Allure Report') {
+            steps {
+                allure includeProperties: false,
+                       jdk: '',
+                       results: [[path: 'target/allure-results']]
             }
         }
     }
@@ -58,6 +135,9 @@ pipeline {
         }
         failure {
             echo "❌ Tests Failed"
+        }
+        always {
+            echo "Build completed for branch: ${env.BRANCH_NAME}"
         }
     }
 }
