@@ -3,11 +3,10 @@ pipeline {
     agent any
 
     triggers {
-        // Nightly regression (QA - alpha)
         cron('''
-               H 2 * * *
-               H 3 */2 * *
-           ''')
+        H 2 * * *
+        H 3 */2 * *
+    ''')
     }
 
     environment {
@@ -25,7 +24,7 @@ pipeline {
                     echo "Branch: ${env.BRANCH_NAME}"
 
                     def isTimer = currentBuild.getBuildCauses('hudson.triggers.TimerTrigger$TimerTriggerCause')
-                    def isPR = env.BRANCH_NAME.startsWith('PR-')
+                    def isPR = env.CHANGE_ID != null
 
                     env.IS_PR = isPR.toString()
 
