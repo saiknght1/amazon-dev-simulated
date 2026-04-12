@@ -24,7 +24,7 @@ pipeline {
                     echo "Branch: ${env.BRANCH_NAME}"
 
                     def isTimer = currentBuild.getBuildCauses('hudson.triggers.TimerTrigger$TimerTriggerCause')
-                    def isPR = env.BRANCH_NAME.startsWith('PR-')
+                    def isPR = env.CHANGE_ID != null
 
                     env.IS_PR = isPR.toString()
 
