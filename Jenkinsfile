@@ -1,4 +1,3 @@
-// new pipeline code
 pipeline {
     agent any
 
@@ -28,10 +27,9 @@ pipeline {
 
                     env.IS_PR = isPR.toString()
 
-                    // 🔥 PR BUILDS (feature→alpha OR alpha→main)
+                    // 🔥 PR BUILDS
                     if (isPR) {
 
-                        // Jenkins sets CHANGE_TARGET for PRs
                         def target = env.CHANGE_TARGET
 
                         if (target == 'alpha') {
@@ -46,6 +44,13 @@ pipeline {
                         }
                     }
 
+                    // 🟢 FEATURE BRANCH → SKIP DIRECT BUILDS
+                    else if (env.BRANCH_NAME.startsWith('feature/')) {
+                        echo "Skipping feature branch build (only PR builds allowed)"
+                        currentBuild.result = 'ABORTED'
+                        return
+                    }
+
                     // 🔵 ALPHA BRANCH
                     else if (env.BRANCH_NAME == 'alpha') {
 
@@ -58,7 +63,6 @@ pipeline {
                     // 🔴 MAIN BRANCH
                     else if (env.BRANCH_NAME == 'main') {
 
-                        // Cron → prod smoke
                         if (isTimer) {
                             env.ENV = 'prod'
                             env.SUITE = 'testng-smoke.xml'
@@ -70,18 +74,11 @@ pipeline {
                         }
                     }
 
-                    // 🟢 FEATURE BRANCH
-                    //else if (env.BRANCH_NAME.startsWith('feature/')) {
-                      //  env.ENV = 'qa'
-                        //env.SUITE = 'testng-smoke.xml'
-                        //echo "Feature branch → optional smoke"
-                   // }
-
-                    // Skip cron for wrong branches
+                    // ⏱️ Skip cron for non-alpha/main branches
                     if (isTimer && !(env.BRANCH_NAME in ['alpha', 'main'])) {
                         echo "Skipping scheduled run for branch: ${env.BRANCH_NAME}"
-                        currentBuild.result = 'NOT_BUILT'
-                        error("Stopping pipeline for invalid cron trigger")
+                        currentBuild.result = 'ABORTED'
+                        return
                     }
 
                     echo "Final → ENV: ${env.ENV}, SUITE: ${env.SUITE}, IS_PR: ${env.IS_PR}"
@@ -89,7 +86,7 @@ pipeline {
             }
         }
 
-        // ✅ Deploy only for non-PR builds
+        // ✅ Deploy only for NON-PR builds
         stage('Deploy Application (Simulated)') {
             when {
                 expression { env.IS_PR != 'true' }
@@ -135,6 +132,9 @@ pipeline {
         }
         failure {
             echo "❌ Tests Failed"
+        }
+        aborted {
+            echo "⚠️ Build intentionally skipped"
         }
         always {
             echo "Build completed for branch: ${env.BRANCH_NAME}"
