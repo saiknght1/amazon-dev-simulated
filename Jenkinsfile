@@ -16,7 +16,6 @@ pipeline {
     }
 
     stages {
-
         stage('Detect Branch & Configure') {
             steps {
                 script {
